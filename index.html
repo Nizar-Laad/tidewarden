@@ -8,7 +8,7 @@
   html, body { margin:0; padding:0; height:100%; background:#04060c; overflow:hidden;
     font-family:"Courier New", monospace; color:#dfeaf2; -webkit-font-smoothing:none; }
   #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; touch-action:none; }
-  canvas { image-rendering:pixelated; image-rendering:crisp-edges; background:#081420;
+  canvas { image-rendering:auto; background:#081420;
     max-width:100vw; max-height:100vh; box-shadow:0 0 60px rgba(0,0,0,0.8); }
   #hud { position:fixed; top:10px; left:0; right:0; text-align:center; pointer-events:none;
     text-shadow:2px 2px 0 #000; font-size:15px; letter-spacing:1px; }
@@ -776,60 +776,90 @@ function drawWall(w){
   if(dmg<1){ rect(x-16, top-8, 32, 4, '#000'); rect(x-15, top-7, 30*dmg, 2, dmg>.4?'#6ad06a':'#d06a6a'); }
 }
 
+// smooth, Alto-style figure: a clean curved silhouette with a gentle gradient and minimal detail
 function drawPerson(x, gy, body, head, bob, dir, type){
-  const yy=gy-22+bob, step=Math.sin(bob*1.5);
-  ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(x,gy,9,3,0,0,7); ctx.fill();
-  // legs (alternating stride)
-  rect(x-4, gy-9, 3, 9-step*2, '#2a2016'); rect(x+1, gy-9, 3, 9+step*2, '#2a2016');
-  rect(x-4, gy-2-step*2, 4, 2, '#1a130c'); rect(x+1, gy-2+step*2, 4, 2, '#1a130c'); // feet
-  // back arm (swings opposite to legs)
-  rect(x-6, yy+1, 2, 7+step*2, shade(body,-34));
-  // torso
-  rect(x-6, yy-1, 12, 16, '#15100a'); rect(x-5, yy, 10, 14, body); rect(x+1, yy, 4, 14, shade(body,-22));
-  rect(x-5, yy, 10, 3, shade(body,18));   // shoulder highlight
+  const step=Math.sin(bob*1.6), bb=Math.abs(Math.sin(bob))*0.8, h=30;
+  ctx.fillStyle='rgba(0,0,0,0.20)'; ctx.beginPath(); ctx.ellipse(x,gy,8,2.6,0,0,7); ctx.fill();
+  ctx.save(); ctx.translate(x, gy-bb); ctx.scale(dir,1);
+  // feet
+  ctx.fillStyle=shade(body,-36);
+  ctx.beginPath(); ctx.ellipse(-2.4+step*1.8,-1,2.6,1.3,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( 2.4-step*1.8,-1,2.6,1.3,0,0,7); ctx.fill();
+  // coat — smooth flared silhouette with a soft top-light
+  const g=ctx.createLinearGradient(0,-h,0,0); g.addColorStop(0,shade(body,18)); g.addColorStop(1,shade(body,-22));
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  ctx.moveTo(-5,-1);
+  ctx.quadraticCurveTo(-7,-h*0.5,-4.4,-h*0.86);
+  ctx.quadraticCurveTo(-3.2,-h,0,-h);
+  ctx.quadraticCurveTo(3.2,-h,4.4,-h*0.86);
+  ctx.quadraticCurveTo(7,-h*0.5,5,-1);
+  ctx.quadraticCurveTo(0,1.8,-5,-1);
+  ctx.closePath(); ctx.fill();
   // head
-  rect(x-5, yy-9, 10, 10, '#15100a'); rect(x-4, yy-8, 8, 8, head); rect(x+2, yy-8, 2, 8, shade(head,-26));
-  // front arm
-  rect(x+4, yy+1, 2, 7-step*2, shade(body,-30));
-  if(type==='harpooner'){ rect(x+Math.min(0,dir*16), yy-4, 16, 2, '#8a6a40');   // shaft
-    rect(x+dir*15, yy-6, dir>0?4:-4, 5, '#9aa0a8'); }                            // barbed tip
-  if(type==='shipwright'){ const hb=Math.sin(bob*2)*2; rect(x+dir*6, yy-3+hb, 2, 11, '#5a3c1e'); rect(x+dir*3, yy-4+hb, 8, 3, '#9aa0a8'); }
-  if(type==='castaway'){ rect(x-5, yy-11, 10, 2, '#9a5a3a'); } // headband rag
+  ctx.fillStyle=head; ctx.beginPath(); ctx.arc(0,-h-3.2,4.1,0,7); ctx.fill();
+  // role detail
+  if(type==='harpooner'){
+    ctx.strokeStyle='#8a6a40'; ctx.lineWidth=2.2; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(2,-h*0.58); ctx.lineTo(18,-h*0.58-2); ctx.stroke(); ctx.lineCap='butt';
+    ctx.fillStyle='#cfd6dc'; ctx.beginPath(); ctx.moveTo(18,-h*0.58-5); ctx.lineTo(23,-h*0.58-2); ctx.lineTo(18,-h*0.58+1); ctx.closePath(); ctx.fill();
+  } else if(type==='shipwright'){
+    const hb=Math.sin(bob*2)*2.5;
+    ctx.strokeStyle='#5a3c1e'; ctx.lineWidth=2.2; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(2,-h*0.55); ctx.lineTo(11,-h*0.55-9+hb); ctx.stroke(); ctx.lineCap='butt';
+    ctx.fillStyle='#9aa0a8'; ctx.fillRect(8,-h*0.55-13+hb,8,5);
+  } else if(type==='sailor'){
+    ctx.fillStyle=shade(body,-8); ctx.beginPath(); ctx.arc(0,-h-4.4,4.3,Math.PI,0); ctx.fill();   // knit cap
+  } else if(type==='castaway'){
+    ctx.strokeStyle='#9a5a3a'; ctx.lineWidth=2; ctx.lineCap='round';                              // headband rag
+    ctx.beginPath(); ctx.moveTo(-3,-h-3); ctx.quadraticCurveTo(-9,-h-1,-11,-h+3.5); ctx.stroke(); ctx.lineCap='butt';
+  }
+  ctx.restore();
 }
 function drawCrew(m){
-  const gy=landY(m.x), b=Math.sin(m.bob)*2;
-  if(m.role==='sailor')      drawPerson(m.x, gy, '#3a6a8a', '#c8a07a', b, m.dir, 'sailor');
-  else if(m.role==='harpooner') drawPerson(m.x, gy, '#2f6a5a', '#c8a07a', b, m.dir, 'harpooner');
-  else                       drawPerson(m.x, gy, '#8a5a2a', '#c8a07a', b, m.dir, 'shipwright');
+  const gy=landY(m.x), b=m.bob;
+  if(m.role==='sailor')         drawPerson(m.x, gy, '#3a6a8a', '#e6c49a', b, m.dir, 'sailor');
+  else if(m.role==='harpooner') drawPerson(m.x, gy, '#2f6a5a', '#e6c49a', b, m.dir, 'harpooner');
+  else                          drawPerson(m.x, gy, '#8a5a2a', '#e6c49a', b, m.dir, 'shipwright');
 }
 
+// a sleek sea-serpent that glides ashore — smooth silhouette, arched neck, single glowing eye
 function drawBeast(e){
-  const x=e.x, gy=landY(x), wob=Math.sin(G.time*6+e.wob);
-  const yy=gy-16+wob*2;
-  ctx.fillStyle='rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(x,gy,12,3,0,0,7); ctx.fill();
-  // writhing tentacles (behind body)
-  ctx.strokeStyle='#12262e'; ctx.lineWidth=3; ctx.lineCap='round';
-  for(let i=-3;i<=3;i++){ const ph=G.time*6+i+e.wob;
-    ctx.beginPath(); ctx.moveTo(x+i*3, yy+5);
-    ctx.quadraticCurveTo(x+i*5+Math.sin(ph)*6, gy-1, x+i*6+Math.sin(ph*1.3)*4, gy+1); ctx.stroke(); }
+  const x=e.x, gy=landY(x), t=G.time, w=e.wob;
+  const fd=Math.sign(CAMP-x)||1;      // faces toward the lighthouse it's heading for
+  const hb=Math.sin(t*3+w)*2;         // head bob
+  ctx.fillStyle='rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(x,gy,15,3.4,0,0,7); ctx.fill();
+  ctx.save(); ctx.translate(x,gy); ctx.scale(fd,1);
+  // tapering tail trailing behind
+  ctx.strokeStyle='#0e2228'; ctx.lineCap='round';
+  let px=-9,py=-3;
+  for(let i=1;i<=5;i++){ const nx=-9-i*5, ny=-3+Math.sin(t*4+w+i*0.6)*4;
+    ctx.lineWidth=Math.max(1.5,8-i*1.4); ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(nx,ny); ctx.stroke(); px=nx; py=ny; }
   ctx.lineCap='butt';
-  // bulbous body with rim shading
-  ctx.fillStyle='#16323c'; circle(x, yy, 11);
-  ctx.fillStyle='#23505e'; circle(x-3, yy-3, 7);
-  ctx.fillStyle='rgba(160,220,235,0.25)'; circle(x-4, yy-5, 3);   // wet glisten
-  // mouth
-  ctx.fillStyle='#0a1a20'; ctx.beginPath(); ctx.ellipse(x, yy+5, 5, 2.5, 0, 0, 7); ctx.fill();
-  ctx.fillStyle='#4a8a96'; for(let t=-1;t<=1;t++) rect(x+t*3, yy+4, 1.4, 2.4, '#bfeaf0'); // teeth
-  // glowing eyes
-  const glow=0.6+0.4*Math.sin(G.time*7+x);
-  ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=glow*0.7;
-  ctx.fillStyle='#a8f0ff'; circle(x-3,yy-1,3); circle(x+3,yy-1,3); ctx.restore(); ctx.globalAlpha=1;
-  rect(x-4, yy-2, 3, 3, '#dffaff'); rect(x+1, yy-2, 3, 3, '#dffaff');
-  rect(x-3.4, yy-1.4, 1, 2, '#0a1a20'); rect(x+1.6, yy-1.4, 1, 2, '#0a1a20'); // pupils
-  // sea-water dripping
-  if((Math.sin(G.time*3+e.wob))>0.7){ ctx.fillStyle='rgba(150,210,225,0.6)'; rect(x+Math.sin(e.wob)*6, yy+8, 1.5, 4, 'rgba(150,210,225,0.6)'); }
-  if(e.carrying) drawSalvage(x, yy-12);
-  if(e.hp<e.maxhp){ rect(x-9, yy-16, 18, 3, '#000'); rect(x-8, yy-15, 16*(e.hp/e.maxhp),1,'#7adfe0'); }
+  // body + arched neck + head, one smooth silhouette
+  const g=ctx.createLinearGradient(0,-26,0,2); g.addColorStop(0,'#2f5a64'); g.addColorStop(1,'#0c2228');
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  ctx.moveTo(-10,0);
+  ctx.quadraticCurveTo(-12,-9,-5,-11);
+  ctx.quadraticCurveTo(0,-12,3,-18-hb*0.4);
+  ctx.quadraticCurveTo(4,-25-hb,11,-24-hb);
+  ctx.quadraticCurveTo(17,-23-hb,16,-17-hb);
+  ctx.quadraticCurveTo(12,-15-hb,8,-12);
+  ctx.quadraticCurveTo(4,-9,2,0);
+  ctx.quadraticCurveTo(-4,3,-10,0);
+  ctx.closePath(); ctx.fill();
+  // dorsal fin
+  ctx.fillStyle='#15383e';
+  ctx.beginPath(); ctx.moveTo(-6,-10); ctx.quadraticCurveTo(-3,-20,1,-13); ctx.closePath(); ctx.fill();
+  // glowing eye
+  const glow=0.55+0.45*Math.sin(t*6+x);
+  ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=glow;
+  ctx.fillStyle='#a8f0ff'; ctx.beginPath(); ctx.arc(10,-19-hb,2.6,0,7); ctx.fill(); ctx.restore(); ctx.globalAlpha=1;
+  ctx.fillStyle='#06181c'; ctx.beginPath(); ctx.arc(10.7,-19-hb,1.1,0,7); ctx.fill();
+  ctx.restore();
+  if(e.carrying) drawSalvage(x, gy-30);
+  if(e.hp<e.maxhp){ ctx.fillStyle='#000'; ctx.fillRect(x-9,gy-32,18,3); ctx.fillStyle='#7adfe0'; ctx.fillRect(x-8,gy-31,16*(e.hp/e.maxhp),1); }
 }
 
 function drawSalvage(x,y){
@@ -859,63 +889,96 @@ function drawFish(f){
   ctx.fillStyle='#cfeaf2'; ctx.fillRect(3.2*s,-1*s,0.8,0.8);      // eye glint
   ctx.restore();
 }
-function drawKeeperSwim(k){
-  const x=k.x, y=k.y, d=k.dir, kick=Math.sin(k.bob*2);
-  // rising bubbles
-  ctx.fillStyle='rgba(200,240,255,0.55)';
-  for(let i=0;i<3;i++){ const bx=x-d*6+Math.sin(G.time*3+i)*3, by=y-4-((G.time*28+i*13)%28); circle(bx,by,1.4+i*0.5); }
-  ctx.save(); ctx.translate(x,y); ctx.scale(d,1);
-  rect(-12,-5,18,10,'#143a4a'); rect(-12,-5,18,3,'#1e556a');     // oilskin body, horizontal
-  rect(-14,-4,4,8,'#0f2c38');                                    // coat tail
-  rect(-13,3,5,3+kick*2,'#2a2c34'); rect(-13,1,5,3-kick*2,'#2a2c34'); // kicking legs
-  rect(6,-5,7,8,'#c8a07a'); rect(11,-5,2,8,'#a8845e');           // head
-  rect(5,-7,10,4,'#e0c040'); rect(13,-6,2,5,'#b89a30');          // rain hat
-  const reach = 13 + (k.stab>0?6:0);
-  rect(6,-1,reach-6,2,'#0f2c38');                                // outstretched arm
-  ctx.restore();
-  const lx=x+d*(13+(k.stab>0?6:0)), ly=y-1, glow=0.7+0.3*Math.sin(G.time*5);
-  // underwater lantern halo
+// flowing, tapering scarf trailing behind (drawn in the keeper's local, dir-scaled space)
+function drawScarf(t, ax, ay, amp){
+  ctx.strokeStyle='#e07d34'; ctx.lineCap='round';
+  let px=ax, py=ay;
+  for(let i=1;i<=6;i++){
+    const nx=ax - i*5.2, ny=ay + Math.sin(t*5 + i*0.7)*amp + i*0.5;
+    ctx.lineWidth=Math.max(1.2, 6.5 - i*0.9);
+    ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(nx,ny); ctx.stroke(); px=nx; py=ny;
+  }
+  ctx.lineCap='butt';
+}
+function lanternGlow(lx, ly, r, a){
   ctx.save(); ctx.globalCompositeOperation='lighter';
-  const hg=ctx.createRadialGradient(lx,ly,2,lx,ly,40);
-  hg.addColorStop(0,`rgba(255,230,140,${0.5*glow})`); hg.addColorStop(1,'rgba(255,230,140,0)');
-  ctx.fillStyle=hg; circle(lx,ly,40); ctx.restore();
-  rect(lx-2,ly-2,4,5,'#3a4654');
-  ctx.globalAlpha=glow; ctx.fillStyle='#ffe98a'; circle(lx,ly+1,4); ctx.globalAlpha=1;
-  // air gauge above the diver
+  const hg=ctx.createRadialGradient(lx,ly,2,lx,ly,r);
+  hg.addColorStop(0,`rgba(255,228,140,${a})`); hg.addColorStop(1,'rgba(255,228,140,0)');
+  ctx.fillStyle=hg; ctx.beginPath(); ctx.arc(lx,ly,r,0,7); ctx.fill(); ctx.restore();
+}
+function drawKeeperSwim(k){
+  const x=k.x, y=k.y, d=k.dir, t=G.time, kick=Math.sin(t*6+k.bob);
+  ctx.fillStyle='rgba(200,240,255,0.5)';
+  for(let i=0;i<3;i++){ const bx=x-d*8+Math.sin(t*3+i)*3, by=y-6-((t*30+i*13)%30); ctx.beginPath(); ctx.arc(bx,by,1.3+i*0.5,0,7); ctx.fill(); }
+  ctx.save(); ctx.translate(x,y); ctx.scale(d,1);
+  drawScarf(t, -6, -1, 3.2);
+  // smooth horizontal body
+  const g=ctx.createLinearGradient(0,-6,0,6); g.addColorStop(0,'#2b4664'); g.addColorStop(1,'#15233a');
+  ctx.fillStyle=g;
+  ctx.beginPath(); ctx.moveTo(-10,0);
+  ctx.quadraticCurveTo(-8,-6,2,-6); ctx.quadraticCurveTo(10,-5,12,0);
+  ctx.quadraticCurveTo(10,5,2,6);   ctx.quadraticCurveTo(-8,6,-10,0); ctx.closePath(); ctx.fill();
+  // kicking leg
+  ctx.strokeStyle='#15233a'; ctx.lineWidth=3.4; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-8,1); ctx.quadraticCurveTo(-13,2+kick*3,-15,4+kick*4); ctx.stroke(); ctx.lineCap='butt';
+  // head + sou'wester at the front
+  ctx.fillStyle='#e6c49a'; ctx.beginPath(); ctx.arc(11,-2,4,0,7); ctx.fill();
+  ctx.fillStyle='#e3b24a'; ctx.beginPath(); ctx.ellipse(12,-5,5,2,0,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(12,-5,3.4,Math.PI,0); ctx.fill();
+  // reaching arm
+  const reach=13+(k.stab>0?5:0);
+  ctx.strokeStyle='#15233a'; ctx.lineWidth=3; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(6,0); ctx.lineTo(reach,-1); ctx.stroke(); ctx.lineCap='butt';
+  ctx.restore();
+  // lantern + halo
+  const lx=x+d*(15+(k.stab>0?5:0)), ly=y-1, glow=0.7+0.3*Math.sin(t*5);
+  lanternGlow(lx,ly,42,0.5*glow);
+  ctx.fillStyle='#3a4654'; ctx.beginPath(); ctx.arc(lx,ly,2.4,0,7); ctx.fill();
+  ctx.globalAlpha=glow; ctx.fillStyle='#ffe98a'; ctx.beginPath(); ctx.arc(lx,ly,3.4,0,7); ctx.fill(); ctx.globalAlpha=1;
+  // air gauge
   const aw=22;
-  rect(x-aw/2, y-16, aw, 4, 'rgba(0,0,0,0.55)');
-  rect(x-aw/2+1, y-15, (aw-2)*clamp(k.air,0,1), 2, k.air>0.3?'#7adfe0':'#ff6a6a');
-  return;
+  ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(x-aw/2,y-16,aw,4);
+  ctx.fillStyle=k.air>0.3?'#7adfe0':'#ff6a6a'; ctx.fillRect(x-aw/2+1,y-15,(aw-2)*clamp(k.air,0,1),2);
 }
 function drawKeeper(){
   const k=G.keeper;
   if(k.swimming){ drawKeeperSwim(k); return; }
-  const x=k.x, gy=landY(x), bob=Math.sin(k.bob)*1.5, step=Math.sin(k.bob*1.5), d=k.dir;
-  ctx.fillStyle='rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(x,gy,11,3,0,0,7); ctx.fill();
-  // legs
-  rect(x-4, gy-10, 4, 10-step*2, '#2a2c34'); rect(x+1, gy-10, 4, 10+step*2, '#2a2c34');
-  // long oilskin coat
-  rect(x-7, gy-30+bob, 14, 22, '#143a4a');
-  rect(x-7, gy-30+bob, 14, 4, '#1e556a');             // shoulder highlight
-  rect(x+2, gy-30+bob, 5, 22, '#0f2c38');             // shaded side
+  const x=k.x, gy=landY(x), d=k.dir, t=G.time;
+  const step=Math.sin(k.bob*1.5), bb=Math.abs(Math.sin(k.bob))*0.9, h=36;
+  ctx.fillStyle='rgba(0,0,0,0.26)'; ctx.beginPath(); ctx.ellipse(x,gy,11,3,0,0,7); ctx.fill();
+  ctx.save(); ctx.translate(x, gy-bb); ctx.scale(d,1);
+  // trailing scarf
+  drawScarf(t, -4, -h+6, 3.4);
+  // feet
+  ctx.fillStyle='#16243a';
+  ctx.beginPath(); ctx.ellipse(-2.6+step*2,-1,3,1.5,0,0,7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( 2.6-step*2,-1,3,1.5,0,0,7); ctx.fill();
+  // long oilskin coat — smooth flared silhouette
+  const g=ctx.createLinearGradient(0,-h,0,0); g.addColorStop(0,'#2b4664'); g.addColorStop(1,'#15233a');
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  ctx.moveTo(-6,-1);
+  ctx.quadraticCurveTo(-8.5,-h*0.5,-5,-h*0.84);
+  ctx.quadraticCurveTo(-3.6,-h,0,-h);
+  ctx.quadraticCurveTo(3.6,-h,5,-h*0.84);
+  ctx.quadraticCurveTo(8.5,-h*0.5,6,-1);
+  ctx.quadraticCurveTo(0,2,-6,-1);
+  ctx.closePath(); ctx.fill();
   // head + sou'wester hat
-  rect(x-4, gy-38+bob, 9, 8, '#c8a07a');
-  rect(x+1, gy-38+bob, 3, 8, '#a8845e');
-  rect(x-6, gy-41+bob, 13, 4, '#e0c040');             // yellow rain hat
-  rect(x-6, gy-38+bob, 13, 2, '#b89a30');             // brim
-  // raised lantern in facing hand
-  const lx=x+d*9, ly=gy-26+bob;
-  rect(x+d*5, gy-28+bob, d*4, 2, '#0f2c38');          // arm
-  // lantern glow halo (stronger at night / dusk)
-  const glow=0.7+0.3*Math.sin(G.time*5);
-  const lit = G.phase==='night' ? 1 : ((G.phaseT/DAY_LEN)<.28 ? 0.5 : 0.18);
-  ctx.save(); ctx.globalCompositeOperation='lighter';
-  const hg=ctx.createRadialGradient(lx,ly,2,lx,ly,52);
-  hg.addColorStop(0,`rgba(255,228,140,${0.55*glow*lit})`); hg.addColorStop(1,'rgba(255,228,140,0)');
-  ctx.fillStyle=hg; circle(lx,ly,52); ctx.restore();
-  rect(lx-2, ly-2, 4, 6, '#3a4654');                  // lantern body
-  ctx.globalAlpha=glow; ctx.fillStyle='#ffe98a'; circle(lx, ly+1, 4); ctx.globalAlpha=1;
-  rect(lx-1, ly-4, 2, 2, '#2a3442');                  // lantern top ring
+  ctx.fillStyle='#e6c49a'; ctx.beginPath(); ctx.arc(0.5,-h-3.5,4.6,0,7); ctx.fill();
+  ctx.fillStyle='#e3b24a';
+  ctx.beginPath(); ctx.ellipse(0.5,-h-5.5,7,2.4,0,0,7); ctx.fill();          // brim
+  ctx.beginPath(); ctx.arc(0.5,-h-6,4.4,Math.PI,0); ctx.fill();              // dome
+  ctx.beginPath(); ctx.moveTo(-3,-h-5); ctx.quadraticCurveTo(-7,-h-3,-6,-h+1); ctx.quadraticCurveTo(-3,-h-1,-2,-h-3); ctx.closePath(); ctx.fill(); // back flap
+  // arm raising the lantern
+  ctx.strokeStyle='#15233a'; ctx.lineWidth=3; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(3,-h*0.62); ctx.lineTo(9,-h*0.62-6); ctx.stroke(); ctx.lineCap='butt';
+  ctx.restore();
+  // lantern + glow (brighter at night/dusk)
+  const lx=x+d*9, ly=gy-bb-h*0.62-6, glow=0.7+0.3*Math.sin(t*5);
+  const lit = G.phase==='night' ? 1 : ((G.phaseT/DAY_LEN)<.28 ? 0.5 : 0.2);
+  lanternGlow(lx,ly,52,0.55*glow*lit);
+  ctx.fillStyle='#3a4654'; ctx.beginPath(); ctx.arc(lx,ly,2.6,0,7); ctx.fill();
+  ctx.globalAlpha=glow; ctx.fillStyle='#ffe98a'; ctx.beginPath(); ctx.arc(lx,ly,3.6,0,7); ctx.fill(); ctx.globalAlpha=1;
 }
 
 function drawHUD(){
