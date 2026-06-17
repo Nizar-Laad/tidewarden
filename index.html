@@ -175,8 +175,8 @@ function newGame(){
     walls:[ {side:-1, dist:300, level:1, hp:100, maxhp:100},
             {side: 1, dist:300, level:1, hp:100, maxhp:100} ],
     castaways:[], crew:[], beasts:[], salvageGround:[], harpoons:[], gulls:[], fish:[], particles:[],
-    ripples:[], clouds:[], seaweed:[],
-    fishCd:0, beastCd:0, over:false, msg:'', msgT:0,
+    ripples:[], clouds:[], seaweed:[], floaters:[], pops:[], rain:[],
+    dn:0, raining:false, fishCd:0, beastCd:0, over:false, msg:'', msgT:0,
   };
   for(let i=0;i<4;i++) G.castaways.push(makeCastaway(CAMP + rand(-700,700)));
   for(let i=0;i<11;i++) G.gulls.push({x:rand(0,WORLD), y:rand(40,150), vx:rand(16,30)*(Math.random()<.5?-1:1), f:rand(0,6)});
@@ -192,7 +192,8 @@ function flash(t){ G.msg=t; G.msgT=2.4; }
 // ---------- phases ----------
 function startNight(){
   G.phase='night'; G.phaseT=NIGHT_LEN;
-  flash('HIGH TIDE — the beasts come ashore!');
+  G.raining = Math.random()<0.45;
+  flash(G.raining ? 'STORM TIDE — beasts come ashore!' : 'HIGH TIDE — the beasts come ashore!');
 }
 function spawnBeast(){
   const side = Math.random()<.5?-1:1;
@@ -203,7 +204,7 @@ function spawnBeast(){
 }
 function startDay(){
   G.phase='day'; G.phaseT=DAY_LEN; G.dayCount++;
-  G.beasts.length=0;
+  G.beasts.length=0; G.raining=false;
   for(let i=0;i<3;i++) G.castaways.push(makeCastaway(rand(300,WORLD-300)));
   flash('Day '+G.dayCount+' — low tide, gather salvage & build');
 }
@@ -234,7 +235,11 @@ function update(dt){
   updateKeeper(dt); updateCastaways(dt); updateCrew(dt);
   updateBeasts(dt); updateHarpoons(dt); updateSalvage(dt);
   updateFish(dt); updateGulls(dt); updateParticles(dt); updateRipples(dt);
+  updateFloaters(dt); updatePops(dt); updateWeather(dt);
   for(const cl of G.clouds){ cl.x += cl.v*dt; if(cl.x > W+90) cl.x = -90; }
+  // smooth day<->night for color crossfades, and decay hit-flash timers
+  G.dn += ((G.phase==='night'?1:0) - G.dn) * Math.min(1, dt*0.8);
+  for(const w of G.walls) if(w.hitT>0) w.hitT-=dt;
 
   const tc = clamp(G.keeper.x - W/2, 0, WORLD - W);
   G.cam += (tc - G.cam) * Math.min(1, dt*6);
@@ -323,6 +328,7 @@ function spearFish(k){
   if(best){
     G.fish.splice(G.fish.indexOf(best),1);
     G.salvage += best.value;
+    floater(best.x, best.y-8, '+'+best.value, '#ffe07a');
     for(let i=0;i<10;i++) G.particles.push({x:best.x,y:best.y,vx:rand(-60,60),vy:rand(-70,30),life:rand(.3,.6),col:'#9adfff',g:120});
     ripple(best.x, tideY());
     flash(best.size>1 ? 'Speared a big catch! +'+best.value+' salvage' : 'Caught a fish! +'+best.value+' salvage');
@@ -343,7 +349,7 @@ function updateSalvage(dt){
     // keeper reclaims a settled piece (grace so castaways nearby get priority)
     const claiming = nearestCastaway(c.x,60) && c.age<3;
     if(settled && c.age>0.45 && !claiming && Math.abs(k.x-c.x)<16){
-      c.picked=true; G.salvage++; spark(c.x, gy-16, '#ffd07a'); continue;
+      c.picked=true; G.salvage++; spark(c.x, gy-16, '#ffd07a'); floater(c.x, gy-16, '+1', '#ffe07a'); continue;
     }
     // recruit a castaway who reaches it
     const ca=nearestCastaway(c.x,20);
@@ -351,7 +357,7 @@ function updateSalvage(dt){
       c.picked=true;
       G.crew.push({role:'sailor', x:ca.x, dir:-1, bob:0, workCd:0, targetDist:0});
       G.castaways.splice(G.castaways.indexOf(ca),1);
-      spark(c.x, gy-18, '#ffd07a'); flash('A castaway joins your crew!'); continue;
+      spark(c.x, gy-18, '#ffd07a'); pop(ca.x, landY(ca.x)-16, '#bfeccf'); flash('A castaway joins your crew!'); continue;
     }
     // a sailor at the lighthouse spends salvage to specialize
     for(const m of G.crew){
@@ -361,7 +367,7 @@ function updateSalvage(dt){
         const ship=G.crew.filter(z=>z.role==='shipwright').length;
         if(ship<harp){ m.role='shipwright'; m.targetDist=neediestWall().dist; }
         else { m.role='harpooner'; m.post=pickPost(); }
-        spark(c.x, gy-18, '#7adfe0');
+        spark(c.x, gy-18, '#7adfe0'); pop(m.x, landY(m.x)-16, '#7adfe0');
         flash(m.role==='harpooner'?'A harpooner takes up the line!':'A shipwright takes up the saw!');
         break;
       }
@@ -412,7 +418,7 @@ function updateCrew(dt){
         G.harpoons.push({x:m.x, y:landY(m.x)-26, vx:m.dir*300, target:e}); }
     }
     if(m.role==='sailor' && Math.abs(m.x-CAMP)<70){
-      m.workCd+=dt; if(m.workCd>6){ m.workCd=0; G.salvage++; spark(CAMP+rand(-40,40), PLATEAU_Y-10, '#ffd07a'); }
+      m.workCd+=dt; if(m.workCd>6){ m.workCd=0; G.salvage++; spark(m.x, landY(m.x)-26, '#ffd07a'); floater(m.x, landY(m.x)-30, '+1', '#ffe07a'); }
     }
   }
 }
@@ -421,7 +427,7 @@ function updateHarpoons(dt){
   for(const a of G.harpoons){
     a.x+=a.vx*dt;
     if(a.target && G.beasts.includes(a.target) && Math.abs(a.x-a.target.x)<14){
-      a.target.hp--; spark(a.target.x, landY(a.target.x)-22, '#9adfff'); a.dead=true;
+      a.target.hp--; a.target.hit=0.13; spark(a.target.x, landY(a.target.x)-22, '#9adfff'); a.dead=true;
       if(a.target.hp<=0) killBeast(a.target);
     }
     if(a.x<-50||a.x>WORLD+50) a.dead=true;
@@ -430,12 +436,14 @@ function updateHarpoons(dt){
 }
 function killBeast(e){
   const i=G.beasts.indexOf(e); if(i>=0) G.beasts.splice(i,1);
-  for(let k=0;k<6;k++) spark(e.x, landY(e.x)-18, '#2a5a6a');
+  for(let k=0;k<8;k++) spark(e.x, landY(e.x)-18, '#2a5a6a');
+  pop(e.x, landY(e.x)-16, '#9adfff');
   G.salvageGround.push({x:e.x, y:landY(e.x)-4, vy:-120, vx:rand(-30,30), picked:false, life:25, age:0});
 }
 
 function updateBeasts(dt){
   for(const e of G.beasts){
+    if(e.hit>0) e.hit-=dt;
     if(e.state==='flee'){
       const edge = e.side<0 ? CAMP-BEACH_END-200 : CAMP+BEACH_END+200;
       e.x += Math.sign(edge-e.x)*(e.speed+34)*dt;
@@ -445,12 +453,12 @@ function updateBeasts(dt){
     const dir=Math.sign(CAMP-e.x);
     const wall=G.walls.find(w=> e.side<0 ? w.side<0 : w.side>0);
     if(wall && wall.hp>0 && !wallSubmerged(wall) && Math.abs(e.x-wallX(wall))<18){
-      e.t-=dt; if(e.t<=0){ wall.hp-=6; e.t=0.5; spark(wallX(wall), landY(wallX(wall))-30, '#caa46a'); }
+      e.t-=dt; if(e.t<=0){ wall.hp-=6; wall.hitT=0.14; e.t=0.5; spark(wallX(wall), landY(wallX(wall))-30, '#caa46a'); }
     } else {
       e.x+=dir*e.speed*dt;
     }
     if(Math.abs(e.x-CAMP)<32){
-      if(G.salvage>0){ G.salvage--; e.carrying=1; }
+      if(G.salvage>0){ G.salvage--; e.carrying=1; floater(CAMP, PLATEAU_Y-16, '-1', '#ff7a6a'); }
       e.state='flee'; flash('A beast snatched your salvage!');
     }
   }
@@ -466,6 +474,31 @@ function splash(x,y,n,col){ for(let i=0;i<n;i++) G.particles.push({x,y,vx:rand(-
 function ripple(x,y){ G.ripples.push({x,y,r:3,life:0.85}); }
 function updateRipples(dt){ for(const r of G.ripples){ r.r+=64*dt; r.life-=dt; } G.ripples=G.ripples.filter(r=>r.life>0); }
 function updateParticles(dt){ for(const p of G.particles){p.vy+=(p.g||200)*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;} G.particles=G.particles.filter(p=>p.life>0); }
+// floating "+N" text, pop rings, and weather
+function floater(x,y,text,col){ G.floaters.push({x,y,vy:-30,life:1.1,text,col:col||'#fff'}); }
+function updateFloaters(dt){ for(const f of G.floaters){ f.y+=f.vy*dt; f.vy*=0.94; f.life-=dt; } G.floaters=G.floaters.filter(f=>f.life>0); }
+function pop(x,y,col){ G.pops.push({x,y,r:3,life:0.5,col:col||'#fff'}); }
+function updatePops(dt){ for(const p of G.pops){ p.r+=95*dt; p.life-=dt; } G.pops=G.pops.filter(p=>p.life>0); }
+function updateWeather(dt){
+  const want = G.raining ? Math.floor(G.dn*64) : 0;
+  while(G.rain.length<want) G.rain.push({x:rand(0,W), y:rand(-40,H), v:rand(440,580), len:rand(7,13)});
+  if(G.rain.length>want) G.rain.length=want;
+  for(const r of G.rain){ r.y+=r.v*dt; r.x-=r.v*0.18*dt; if(r.y>H+20||r.x<-20){ r.y=-20; r.x=rand(0,W); } }
+}
+// color lerp helpers for smooth day<->night crossfade
+function lerp(a,b,t){ return a+(b-a)*t; }
+function mix(h1,h2,t){ const n1=parseInt(h1.slice(1),16), n2=parseInt(h2.slice(1),16);
+  const r=Math.round(lerp(n1>>16,n2>>16,t)), g=Math.round(lerp((n1>>8)&255,(n2>>8)&255,t)), b=Math.round(lerp(n1&255,n2&255,t));
+  return 'rgb('+r+','+g+','+b+')'; }
+function dn(dayHex,nightHex){ return mix(dayHex,nightHex,G.dn); }            // pick by current darkness
+function rgba2(dr,dg,db,da, nr,ng,nb,na){ const t=G.dn;
+  return `rgba(${Math.round(lerp(dr,nr,t))},${Math.round(lerp(dg,ng,t))},${Math.round(lerp(db,nb,t))},${lerp(da,na,t).toFixed(3)})`; }
+function hx(h){ const n=parseInt(h.slice(1),16); return [n>>16,(n>>8)&255,n&255]; }
+function mixn(a,b,t){ return [lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)]; }
+function rgbOf(c){ return 'rgb('+(c[0]|0)+','+(c[1]|0)+','+(c[2]|0)+')'; }
+// 3-stop day -> dusk -> night blend driven by G.dn (gives a real sunset/sunrise)
+function skyCol(dayHex,duskHex,nightHex){ const t=G.dn;
+  return t<0.5 ? rgbOf(mixn(hx(dayHex),hx(duskHex),t*2)) : rgbOf(mixn(hx(duskHex),hx(nightHex),(t-0.5)*2)); }
 
 // ---------- render ----------
 function draw(){
@@ -490,74 +523,67 @@ function draw(){
   for(const a of G.harpoons){ ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(a.x-Math.sign(a.vx)*11,a.y); ctx.stroke(); }
   drawKeeper();
   for(const p of G.particles){ ctx.globalAlpha=Math.min(1,p.life*2.5); rect(p.x,p.y,3,3,p.col); } ctx.globalAlpha=1;
+  drawPops(); drawFloaters();
   drawBeam();                  // lighthouse beam over everything at night
   ctx.restore();
 
   drawColorGrade();
+  drawWeather();
   drawHUD();
   if(G.msgT>0){ ctx.globalAlpha=Math.min(1,G.msgT); ctx.fillStyle='#fff'; ctx.font='20px "Courier New"';
     ctx.textAlign='center'; ctx.fillText(G.msg, W/2, 70); ctx.globalAlpha=1; }
 }
 
 function drawSky(){
-  const dusk = G.phase==='day' && (G.phaseT/DAY_LEN) < .28;
-  let top,mid,bot;
-  if(G.phase==='day'){
-    if(dusk){ top='#3a3a72'; mid='#9a5a78'; bot='#f0a868'; }
-    else    { top='#2a5288'; mid='#5b94c2'; bot='#9fd0e6'; }
-  } else { top='#050b22'; mid='#0c2244'; bot='#173d63'; }
+  const top=skyCol('#2a5288','#6a4a72','#050b22');
+  const mid=skyCol('#5b94c2','#c06a5a','#0c2244');
+  const bot=skyCol('#9fd0e6','#f0a460','#173d63');
   const g=ctx.createLinearGradient(0,0,0,H*0.7);
   g.addColorStop(0,top); g.addColorStop(.55,mid); g.addColorStop(1,bot);
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
 
-  // sun / moon arc
   const cyc = G.phase==='day' ? (1-G.phaseT/DAY_LEN) : (1-G.phaseT/NIGHT_LEN);
   const cx=70+cyc*(W-140), cy=150-Math.sin(cyc*Math.PI)*96;
-  if(G.phase==='day'){
-    ctx.save(); ctx.globalCompositeOperation='lighter';
-    const hg=ctx.createRadialGradient(cx,cy,4,cx,cy,90);
-    hg.addColorStop(0, dusk?'rgba(255,200,140,0.85)':'rgba(255,240,180,0.8)'); hg.addColorStop(1,'rgba(255,240,180,0)');
+  // stars fade in with darkness
+  if(G.dn>0.05){ ctx.fillStyle='#fff';
+    for(let i=0;i<70;i++){ const sx=(i*149)%W, sy=(i*71)%(H*0.55), tw=(0.4+0.6*Math.sin(G.time*2+i))*G.dn;
+      ctx.globalAlpha=tw; ctx.fillRect(sx,sy,2,2);} ctx.globalAlpha=1; }
+  // sun fades out
+  if(G.dn<0.96){ ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=1-G.dn;
+    const hg=ctx.createRadialGradient(cx,cy,4,cx,cy,90); hg.addColorStop(0,'rgba(255,228,160,0.85)'); hg.addColorStop(1,'rgba(255,228,160,0)');
     ctx.fillStyle=hg; circle(cx,cy,90); ctx.restore();
-    ctx.fillStyle = dusk?'#ffd28a':'#fff0b0'; circle(cx,cy,22);
-  } else {
-    if(G.phase==='night'){ ctx.fillStyle='rgba(255,255,255,0.75)';
-      for(let i=0;i<70;i++){ const sx=(i*149)%W, sy=(i*71)%(H*0.55), tw=0.4+0.6*Math.sin(G.time*2+i);
-        ctx.globalAlpha=tw; ctx.fillRect(sx,sy,2,2);} ctx.globalAlpha=1; }
-    ctx.save(); ctx.globalCompositeOperation='lighter';
-    const hg=ctx.createRadialGradient(cx,cy,4,cx,cy,60);
-    hg.addColorStop(0,'rgba(200,220,255,0.6)'); hg.addColorStop(1,'rgba(200,220,255,0)');
+    ctx.globalAlpha=1-G.dn; ctx.fillStyle='#fff0b0'; circle(cx,cy,22); ctx.globalAlpha=1; }
+  // moon fades in
+  if(G.dn>0.05){ ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=G.dn;
+    const hg=ctx.createRadialGradient(cx,cy,4,cx,cy,60); hg.addColorStop(0,'rgba(200,220,255,0.6)'); hg.addColorStop(1,'rgba(200,220,255,0)');
     ctx.fillStyle=hg; circle(cx,cy,60); ctx.restore();
-    ctx.fillStyle='#dfe6ff'; circle(cx,cy,16); ctx.fillStyle=top; circle(cx+6,cy-4,14);
-  }
+    ctx.globalAlpha=G.dn; ctx.fillStyle='#dfe6ff'; circle(cx,cy,16); ctx.fillStyle=top; circle(cx+6,cy-4,14); ctx.globalAlpha=1; }
 
-  // clouds (screen space, soft puffs)
-  for(const cl of G.clouds){
-    const a = G.phase==='day' ? (dusk?0.5:0.85) : 0.28;
-    ctx.fillStyle = G.phase==='day' ? (dusk?`rgba(255,210,200,${a})`:`rgba(255,255,255,${a})`) : `rgba(150,170,210,${a})`;
-    const s=cl.s, x=cl.x, y=cl.y;
+  // clouds (tint + fade with darkness)
+  const cloudHi=skyCol('#ffffff','#ffceb4','#9aa8c8'), cloudLo=skyCol('#d2e4f0','#e0a484','#6a7a9a');
+  const ca=lerp(0.85,0.26,G.dn);
+  for(const cl of G.clouds){ const s=cl.s,x=cl.x,y=cl.y;
+    ctx.globalAlpha=ca; ctx.fillStyle=cloudHi;
     circle(x,y,12*s); circle(x+14*s,y+3*s,15*s); circle(x+30*s,y,11*s); circle(x+15*s,y-7*s,12*s);
-    ctx.fillStyle = G.phase==='day' ? (dusk?'rgba(210,150,160,0.5)':'rgba(210,228,240,0.7)') : 'rgba(110,130,170,0.3)';
-    circle(x+8*s,y+6*s,11*s); circle(x+24*s,y+6*s,12*s);
-  }
-  // store sun position for water glint
+    ctx.fillStyle=cloudLo; circle(x+8*s,y+6*s,11*s); circle(x+24*s,y+6*s,12*s); ctx.globalAlpha=1; }
   G._sunx = cx;
 }
 
 function drawFarSea(){
   // distant sea + horizon haze behind the island
   const horizon = PLATEAU_Y - 4;
-  ctx.fillStyle = G.phase==='day' ? 'rgba(180,210,230,0.5)' : 'rgba(40,70,110,0.5)';
+  ctx.fillStyle = rgba2(180,210,230,0.5, 40,70,110,0.5);
   rect(0, horizon-6, WORLD, 6, ctx.fillStyle);
-  rect(0, horizon, WORLD, 14, G.phase==='day' ? '#4f8eb4' : '#16314e');
+  rect(0, horizon, WORLD, 14, dn('#4f8eb4','#16314e'));
   // faint distant sail
-  ctx.fillStyle = G.phase==='day' ? 'rgba(245,245,235,0.6)' : 'rgba(120,140,170,0.4)';
+  ctx.fillStyle = rgba2(245,245,235,0.6, 120,140,170,0.4);
   const sx = CAMP + 900 + (G.time*8)%500;
   ctx.beginPath(); ctx.moveTo(sx, horizon-2); ctx.lineTo(sx+8, horizon-2); ctx.lineTo(sx+4, horizon-16); ctx.closePath(); ctx.fill();
 }
 
 function drawGull(g){
   const flap = Math.sin(g.f), d = g.vx<0?-1:1;
-  ctx.strokeStyle = G.phase==='day' ? 'rgba(245,245,240,0.9)' : 'rgba(170,185,210,0.7)';
+  ctx.strokeStyle = rgba2(245,245,240,0.9, 170,185,210,0.7);
   ctx.lineWidth=2; ctx.beginPath();
   ctx.moveTo(g.x-7*d, g.y - flap*3);
   ctx.quadraticCurveTo(g.x, g.y+2, g.x+7*d, g.y - flap*3);
@@ -569,7 +595,7 @@ function drawSeaweed(){
   for(const w of G.seaweed){
     const bed=landY(w.x); if(bed<=surf+8) continue;       // only where submerged
     const sway=Math.sin(G.time*1.6 + w.ph)*6;
-    ctx.strokeStyle = w.tone ? (G.phase==='day'?'#2f7a52':'#1c4632') : (G.phase==='day'?'#3f8a3a':'#244a22');
+    ctx.strokeStyle = w.tone ? dn('#2f7a52','#1c4632') : dn('#3f8a3a','#244a22');
     ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(w.x, bed);
     ctx.quadraticCurveTo(w.x+sway*0.5, bed-w.h*0.6, w.x+sway, bed-w.h);
     ctx.stroke();
@@ -577,13 +603,13 @@ function drawSeaweed(){
 }
 
 function drawGodRays(){
-  if(G.phase!=='day') return;
-  const surf=tideY(); const [x0,x1]=viewBounds(); const stride=260;
+  if(G.dn>0.7) return;
+  const surf=tideY(); const [x0,x1]=viewBounds(); const stride=260; const a=(0.12*(1-G.dn)).toFixed(3);
   ctx.save(); ctx.globalCompositeOperation='lighter';
   for(let bx=Math.floor(x0/stride)*stride; bx<x1; bx+=stride){
     const sx = bx + Math.sin(G.time*0.3 + bx)*30;
     const grd=ctx.createLinearGradient(sx,surf,sx-60,surf+260);
-    grd.addColorStop(0,'rgba(180,225,235,0.12)'); grd.addColorStop(1,'rgba(180,225,235,0)');
+    grd.addColorStop(0,`rgba(180,225,235,${a})`); grd.addColorStop(1,'rgba(180,225,235,0)');
     ctx.fillStyle=grd;
     ctx.beginPath(); ctx.moveTo(sx,surf); ctx.lineTo(sx+26,surf); ctx.lineTo(sx-44,surf+260); ctx.lineTo(sx-96,surf+260); ctx.closePath(); ctx.fill();
   }
@@ -592,7 +618,7 @@ function drawGodRays(){
 
 function drawAmbientBubbles(){
   const surf=tideY(); const [x0,x1]=viewBounds();
-  ctx.fillStyle = G.phase==='day' ? 'rgba(200,235,245,0.4)' : 'rgba(150,190,210,0.3)';
+  ctx.fillStyle = rgba2(200,235,245,0.4, 150,190,210,0.3);
   for(let i=0;i<WORLD/240;i++){
     const bx = (i*317) % WORLD; if(bx<x0||bx>x1) continue;
     const bed = landY(bx); if(bed<=surf+30) continue;
@@ -605,19 +631,48 @@ function drawAmbientBubbles(){
 function drawRipples(){
   for(const r of G.ripples){
     ctx.globalAlpha = clamp(r.life,0,1)*0.7;
-    ctx.strokeStyle = G.phase==='day' ? '#dff2ff' : '#9fc4e0'; ctx.lineWidth=1.5;
+    ctx.strokeStyle = dn('#dff2ff','#9fc4e0'); ctx.lineWidth=1.5;
     ctx.beginPath(); ctx.ellipse(r.x, tideY(), r.r, r.r*0.32, 0, 0, 7); ctx.stroke();
   }
   ctx.globalAlpha=1;
 }
+function drawPops(){
+  ctx.lineWidth=2;
+  for(const p of G.pops){ ctx.globalAlpha=clamp(p.life*2,0,1); ctx.strokeStyle=p.col;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.stroke(); }
+  ctx.globalAlpha=1;
+}
+function drawFloaters(){
+  ctx.textAlign='center'; ctx.font='bold 13px "Courier New"';
+  for(const f of G.floaters){ ctx.globalAlpha=clamp(f.life,0,1);
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillText(f.text,f.x+1,f.y+1);
+    ctx.fillStyle=f.col; ctx.fillText(f.text,f.x,f.y); }
+  ctx.globalAlpha=1; ctx.textAlign='left';
+}
+function drawWeather(){
+  // drifting mist bands (stronger at night)
+  const mistA = 0.05 + 0.13*G.dn;
+  if(mistA>0.02) for(let i=0;i<3;i++){
+    const my = H*0.56 + i*H*0.13, mx = ((G.time*(13+i*7)) % (W+260)) - 130;
+    const g=ctx.createRadialGradient(mx,my,12,mx,my,210);
+    g.addColorStop(0,`rgba(205,218,232,${mistA})`); g.addColorStop(1,'rgba(205,218,232,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,my-90,W,180);
+  }
+  // rain
+  if(G.rain.length){ ctx.strokeStyle='rgba(185,208,228,0.5)'; ctx.lineWidth=1.2; ctx.beginPath();
+    for(const r of G.rain){ ctx.moveTo(r.x,r.y); ctx.lineTo(r.x-2.6,r.y+r.len); }
+    ctx.stroke(); }
+}
 
 function drawColorGrade(){
-  if(G.phase==='night'){
-    const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'rgba(6,12,34,0.5)'); g.addColorStop(1,'rgba(6,16,40,0.32)');
+  if(G.dn>0.02){
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,`rgba(6,12,34,${(0.5*G.dn).toFixed(3)})`); g.addColorStop(1,`rgba(6,16,40,${(0.32*G.dn).toFixed(3)})`);
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-  } else if((G.phaseT/DAY_LEN) < .28){
-    ctx.fillStyle='rgba(255,150,90,0.12)'; ctx.fillRect(0,0,W,H);
   }
+  // warm sunset/sunrise bloom, peaks mid-transition
+  const warm = 1 - Math.abs(G.dn-0.4)/0.4;
+  if(warm>0){ ctx.fillStyle=`rgba(255,150,90,${(0.14*warm).toFixed(3)})`; ctx.fillRect(0,0,W,H); }
   // soft vignette
   const v=ctx.createRadialGradient(W/2,H/2,H*0.4,W/2,H/2,H*0.85);
   v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,0.35)');
@@ -634,24 +689,23 @@ function landPath(){
 }
 function drawLand(){
   const [x0,x1]=viewBounds(); const tY=tideY();
-  const sand = G.phase==='day' ? '#e2cb90' : '#82745a';
-  landPath(); ctx.fillStyle=sand; ctx.fill();
+  landPath(); ctx.fillStyle=dn('#e2cb90','#82745a'); ctx.fill();
   // mid sand band + wet-sand sheen, clipped to the land silhouette
   landPath(); ctx.save(); ctx.clip();
-  ctx.fillStyle = G.phase==='day' ? '#cdb478' : '#6a5e44'; ctx.fillRect(x0, PLATEAU_Y+28, x1-x0, H);
-  ctx.fillStyle = G.phase==='day' ? 'rgba(150,180,180,0.35)' : 'rgba(60,90,110,0.4)'; ctx.fillRect(x0, tY-10, x1-x0, 12);
+  ctx.fillStyle = dn('#cdb478','#6a5e44'); ctx.fillRect(x0, PLATEAU_Y+28, x1-x0, H);
+  ctx.fillStyle = rgba2(150,180,180,0.35, 60,90,110,0.4); ctx.fillRect(x0, tY-10, x1-x0, 12);
   ctx.restore();
   // sand speckles (visible only)
-  ctx.fillStyle = G.phase==='day' ? 'rgba(120,100,60,0.4)':'rgba(40,34,22,0.4)';
+  ctx.fillStyle = rgba2(120,100,60,0.4, 40,34,22,0.4);
   for(let i=0;i<WORLD/26;i++){ const sx=(i*53)%WORLD; if(sx<x0||sx>x1) continue; const sy=landY(sx)+8+(i*7%30); if(sy<tY) ctx.fillRect(sx,sy,2,2); }
   // each island: grassy cap + palms, only where it's above the waterline
   for(const is of ISLANDS){
     if(is.cx-is.reach>x1 || is.cx+is.reach<x0) continue;       // island off-screen
     if(is.grass && is.peakY < tY-2){
       const gx0=is.cx-is.hw, gw=is.hw*2, gtop=is.peakY;
-      rect(gx0, gtop, gw, 9, G.phase==='day' ? '#6f9a4a':'#2f4a26');
-      rect(gx0, gtop, gw, 3, G.phase==='day' ? '#86b85c':'#3a5630');
-      ctx.fillStyle = G.phase==='day' ? '#86b85c':'#37522a';
+      rect(gx0, gtop, gw, 9, dn('#6f9a4a','#2f4a26'));
+      rect(gx0, gtop, gw, 3, dn('#86b85c','#3a5630'));
+      ctx.fillStyle = dn('#86b85c','#37522a');
       for(let i=0;i<gw/16;i++){ const bx=gx0+i*16+(i*7%7); rect(bx, gtop-3, 2, 4, ctx.fillStyle); }
     }
     if(is.palms){
@@ -662,45 +716,46 @@ function drawLand(){
   // rocks on the beaches (visible; below the plateau, above water)
   for(let i=0;i<WORLD/120;i++){ const rx=(i*263)%WORLD; if(rx<x0||rx>x1) continue; const ry=landY(rx);
     if(ry>=tY || ry<=PLATEAU_Y+30) continue; const rr=3+(i%3);
-    ctx.fillStyle=G.phase==='day'?'#8f8068':'#4c4234'; circle(rx, ry-2, rr);
-    ctx.fillStyle=G.phase==='day'?'#a89a80':'#5e5444'; circle(rx-rr*0.4, ry-rr*0.6, rr*0.5); }
+    ctx.fillStyle=dn('#8f8068','#4c4234'); circle(rx, ry-2, rr);
+    ctx.fillStyle=dn('#a89a80','#5e5444'); circle(rx-rr*0.4, ry-rr*0.6, rr*0.5); }
 }
 function drawPalm(x, gy, dir){
   const sway=Math.sin(G.time*1.1 + x)*3;
   // trunk
-  ctx.strokeStyle=G.phase==='day'?'#7a5a36':'#3e2e1c'; ctx.lineWidth=5; ctx.beginPath();
+  ctx.strokeStyle=dn('#7a5a36','#3e2e1c'); ctx.lineWidth=5; ctx.beginPath();
   ctx.moveTo(x,gy); ctx.quadraticCurveTo(x+dir*6, gy-26, x+dir*10+sway, gy-46); ctx.stroke();
   const hx=x+dir*10+sway, hy=gy-46;
   // fronds
-  ctx.strokeStyle=G.phase==='day'?'#3f8a44':'#1f4a26'; ctx.lineWidth=3;
+  ctx.strokeStyle=dn('#3f8a44','#1f4a26'); ctx.lineWidth=3;
   for(let a=0;a<6;a++){ const ang=Math.PI + a*(Math.PI/5) - 0.2; const ex=hx+Math.cos(ang)*22, ey=hy+Math.sin(ang)*16;
     ctx.beginPath(); ctx.moveTo(hx,hy); ctx.quadraticCurveTo((hx+ex)/2, ey-8, ex, ey); ctx.stroke(); }
-  ctx.fillStyle=G.phase==='day'?'#caa24a':'#6a5424'; circle(hx,hy,3); // coconuts
+  ctx.fillStyle=dn('#caa24a','#6a5424'); circle(hx,hy,3); // coconuts
 }
 
 function drawWater(){
   const tY=tideY();
   // depth gradient: translucent and bright near the surface, deep and dark below
   const g=ctx.createLinearGradient(0,tY,0,H);
-  if(G.phase==='day'){ g.addColorStop(0,'rgba(86,166,196,0.72)'); g.addColorStop(0.4,'rgba(40,110,156,0.85)'); g.addColorStop(1,'rgba(14,52,86,0.95)'); }
-  else { g.addColorStop(0,'rgba(36,86,124,0.8)'); g.addColorStop(0.4,'rgba(18,52,84,0.9)'); g.addColorStop(1,'rgba(6,24,46,0.96)'); }
+  g.addColorStop(0,   rgba2(86,166,196,0.72, 36,86,124,0.80));
+  g.addColorStop(0.4, rgba2(40,110,156,0.85, 18,52,84,0.90));
+  g.addColorStop(1,   rgba2(14,52,86,0.95,  6,24,46,0.96));
   const [x0,x1]=viewBounds();
   ctx.fillStyle=g; ctx.fillRect(x0, tY, x1-x0, H-tY+10);
 
   // animated caustic shimmer just under the surface
   ctx.save(); ctx.globalCompositeOperation='lighter';
-  ctx.strokeStyle = G.phase==='day' ? 'rgba(170,225,240,0.10)' : 'rgba(120,170,200,0.06)'; ctx.lineWidth=2;
+  ctx.strokeStyle = rgba2(170,225,240,0.10, 120,170,200,0.06); ctx.lineWidth=2;
   for(let row=0;row<5;row++){ ctx.beginPath();
     for(let x=x0;x<=x1;x+=18){ const yy=tY+12+row*22 + Math.sin(x*0.03 + G.time*1.6 + row*1.3)*6; x===x0?ctx.moveTo(x,yy):ctx.lineTo(x,yy); }
     ctx.stroke(); }
   ctx.restore();
 
-  // sun glint on the surface (day) near the sun's screen-x
-  if(G.phase==='day' && G._sunx!=null){
-    const wx = G._sunx + G.cam;  // convert screen-x to world-x (we're translated by -cam)
+  // sun glint on the surface near the sun's screen-x (fades as night falls)
+  if(G.dn<0.85 && G._sunx!=null){
+    const wx = G._sunx + G.cam, fade=1-G.dn;  // convert screen-x to world-x (we're translated by -cam)
     ctx.save(); ctx.globalCompositeOperation='lighter';
-    for(let i=0;i<10;i++){ const gx=wx+rand(-70,70), a=0.10+0.10*Math.sin(G.time*4+i);
-      ctx.globalAlpha=a; ctx.fillStyle='#fff4c8'; rect(gx, tY+2+i*2.2, rand(6,18), 1.5, '#fff4c8'); }
+    for(let i=0;i<10;i++){ const gx=wx+rand(-70,70), a=(0.10+0.10*Math.sin(G.time*4+i))*fade;
+      ctx.globalAlpha=a; ctx.fillStyle='#fff4c8'; ctx.fillRect(gx, tY+2+i*2.2, rand(6,18), 1.5); }
     ctx.restore(); ctx.globalAlpha=1;
   }
 
@@ -745,15 +800,15 @@ function drawLighthouse(){
 }
 
 function drawBeam(){
-  if(G.phase!=='night') return;
-  const x=CAMP, ly=LAMP_Y+8;
+  if(G.dn<0.08) return;
+  const x=CAMP, ly=LAMP_Y+8, k=G.dn;          // beam fades in with darkness
   ctx.save(); ctx.globalCompositeOperation='lighter';
   // two opposing sweeping beams
   for(const s of [0, Math.PI]){
     const ang = Math.sin(G.time*0.6)*0.8 + s;
     ctx.save(); ctx.translate(x,ly); ctx.rotate(ang);
     const g=ctx.createLinearGradient(0,0,560,0);
-    g.addColorStop(0,'rgba(255,246,176,0.30)'); g.addColorStop(1,'rgba(255,246,176,0)');
+    g.addColorStop(0,`rgba(255,246,176,${(0.30*k).toFixed(3)})`); g.addColorStop(1,'rgba(255,246,176,0)');
     ctx.fillStyle=g;
     ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(560,-120); ctx.lineTo(560,120); ctx.closePath(); ctx.fill();
     ctx.restore();
@@ -773,6 +828,7 @@ function drawWall(w){
   rect(x-17, top, 34, 7, '#6a4a28');
   ctx.strokeStyle='#3a2a18'; ctx.lineWidth=1;
   for(let yy=top+8; yy<gy; yy+=10){ ctx.beginPath(); ctx.moveTo(x-13,yy); ctx.lineTo(x+13,yy); ctx.stroke(); }
+  if(w.hitT>0){ ctx.globalAlpha=clamp(w.hitT*5,0,1); ctx.fillStyle='#ffd0a0'; ctx.fillRect(x-13,top,26,h); ctx.globalAlpha=1; }  // struck flash
   if(dmg<1){ rect(x-16, top-8, 32, 4, '#000'); rect(x-15, top-7, 30*dmg, 2, dmg>.4?'#6ad06a':'#d06a6a'); }
 }
 
@@ -869,6 +925,9 @@ function drawBeast(e){
   ctx.fillStyle='#a8f0ff'; ctx.beginPath(); ctx.arc(10,-19-hb,2.6,0,7); ctx.fill(); ctx.restore(); ctx.globalAlpha=1;
   ctx.fillStyle='#06181c'; ctx.beginPath(); ctx.arc(10.7,-19-hb,1.1,0,7); ctx.fill();
   ctx.restore();
+  if(e.hit>0){ ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=clamp(e.hit*5,0,1);
+    const fg=ctx.createRadialGradient(x,gy-14,1,x,gy-14,17); fg.addColorStop(0,'rgba(255,255,255,0.9)'); fg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(x,gy-14,17,0,7); ctx.fill(); ctx.restore(); ctx.globalAlpha=1; }
   if(e.carrying) drawSalvage(x, gy-30);
   if(e.hp<e.maxhp){ ctx.fillStyle='#000'; ctx.fillRect(x-9,gy-32,18,3); ctx.fillStyle='#7adfe0'; ctx.fillRect(x-8,gy-31,16*(e.hp/e.maxhp),1); }
 }
@@ -888,15 +947,17 @@ function drawFish(f){
   const tail=Math.sin(G.time*9 + f.bob)*0.5;     // tail beat
   const col = f.col || (f.col = f.size>1 ? (Math.random()<.5?'#5a8aa8':'#6a7aa8') : (Math.random()<.5?'#7ab0c8':'#9ac88a'));
   ctx.save(); ctx.translate(x,y); ctx.scale(d,1);
-  // dorsal + pelvic fins
+  // dorsal + pelvic fins (smooth curves)
   ctx.fillStyle=shade(col,-18);
-  ctx.beginPath(); ctx.moveTo(0,-3*s); ctx.lineTo(-3*s,-6*s); ctx.lineTo(2*s,-3*s); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(-1*s,3*s); ctx.lineTo(-4*s,5*s); ctx.lineTo(1*s,3*s); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(2*s,-2.4*s); ctx.quadraticCurveTo(-2*s,-7*s,-3.5*s,-2.6*s); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(1*s,2.6*s); ctx.quadraticCurveTo(-2.5*s,5.5*s,-3.5*s,2.6*s); ctx.closePath(); ctx.fill();
   // body
   ctx.fillStyle=col; ctx.beginPath(); ctx.ellipse(0,0,6*s,3*s,0,0,7); ctx.fill();
-  // tail (beating)
-  ctx.beginPath(); ctx.moveTo(-5*s,0);
-  ctx.lineTo(-10*s,(-3+tail*3)*s); ctx.lineTo(-10*s,(3+tail*3)*s); ctx.closePath(); ctx.fill();
+  // tail (smooth, beating)
+  ctx.beginPath(); ctx.moveTo(-4.5*s,0);
+  ctx.quadraticCurveTo(-8*s,(-1+tail*2)*s, -10*s,(-3.5+tail*3)*s);
+  ctx.quadraticCurveTo(-8*s,(tail*3)*s, -10*s,(3.5+tail*3)*s);
+  ctx.quadraticCurveTo(-8*s,(1+tail*2)*s, -4.5*s,0); ctx.closePath(); ctx.fill();
   // belly sheen + eye + gill
   ctx.fillStyle=shade(col,34); ctx.beginPath(); ctx.ellipse(0,1*s,4*s,1.3*s,0,0,7); ctx.fill();
   ctx.fillStyle=shade(col,-30); ctx.fillRect(2*s,-2*s,1,4*s);     // gill line
@@ -988,7 +1049,7 @@ function drawKeeper(){
   ctx.restore();
   // lantern + glow (brighter at night/dusk)
   const lx=x+d*9, ly=gy-bb-30, glow=0.7+0.3*Math.sin(t*5);
-  const lit = G.phase==='night' ? 1 : ((G.phaseT/DAY_LEN)<.28 ? 0.5 : 0.2);
+  const lit = 0.2 + 0.8*G.dn;   // lantern brightens smoothly as night falls
   lanternGlow(lx,ly,52,0.55*glow*lit);
   ctx.fillStyle='#2a3442'; ctx.fillRect(lx-2.6, ly-3.2, 5.2, 1.4);                 // lantern top
   ctx.fillStyle='#3a4654'; ctx.beginPath(); ctx.moveTo(lx-2.6,ly-2); ctx.lineTo(lx+2.6,ly-2); ctx.lineTo(lx+2,ly+4); ctx.lineTo(lx-2,ly+4); ctx.closePath(); ctx.fill();
