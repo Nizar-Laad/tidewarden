@@ -483,7 +483,7 @@ function draw(){
   drawRipples();               // expanding surface rings
   drawLighthouse();
   for(const s of G.salvageGround) drawSalvage(s.x,s.y);
-  for(const c of G.castaways) drawPerson(c.x, landY(c.x), '#7a6a58', '#c8a07a', Math.sin(c.bob)*2, c.dir, 'castaway');
+  for(const c of G.castaways) drawPerson(c.x, landY(c.x), '#7a6a58', '#e6c49a', c.bob, c.dir, 'castaway');
   for(const m of G.crew) drawCrew(m);
   for(const e of G.beasts) drawBeast(e);
   ctx.strokeStyle='#dfe6c8'; ctx.lineWidth=2;
@@ -776,43 +776,54 @@ function drawWall(w){
   if(dmg<1){ rect(x-16, top-8, 32, 4, '#000'); rect(x-15, top-7, 30*dmg, 2, dmg>.4?'#6ad06a':'#d06a6a'); }
 }
 
-// smooth, Alto-style figure: a clean curved silhouette with a gentle gradient and minimal detail
+// a smooth round-capped limb (arm/leg)
+function limb(x1,y1,x2,y2,w,col){ ctx.strokeStyle=col; ctx.lineWidth=w; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
+// Alto-style figure with readable limbs + a role tool. Origin at the feet, faces +x (scaled by dir).
 function drawPerson(x, gy, body, head, bob, dir, type){
-  const step=Math.sin(bob*1.6), bb=Math.abs(Math.sin(bob))*0.8, h=30;
-  ctx.fillStyle='rgba(0,0,0,0.20)'; ctx.beginPath(); ctx.ellipse(x,gy,8,2.6,0,0,7); ctx.fill();
+  const step=Math.sin(bob*1.5), sw=step*3, bb=Math.abs(Math.sin(bob))*0.7;
+  const dark=shade(body,-26), light=shade(body,18);
+  ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(x,gy,8,2.4,0,0,7); ctx.fill();
   ctx.save(); ctx.translate(x, gy-bb); ctx.scale(dir,1);
-  // feet
-  ctx.fillStyle=shade(body,-36);
-  ctx.beginPath(); ctx.ellipse(-2.4+step*1.8,-1,2.6,1.3,0,0,7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse( 2.4-step*1.8,-1,2.6,1.3,0,0,7); ctx.fill();
-  // coat — smooth flared silhouette with a soft top-light
-  const g=ctx.createLinearGradient(0,-h,0,0); g.addColorStop(0,shade(body,18)); g.addColorStop(1,shade(body,-22));
+  // legs (stride)
+  limb(-1.8,-12,-2-sw,0, 3.6, dark);
+  limb( 1.8,-12, 2+sw,0, 3.6, body);
+  // back arm (swings)
+  limb(-2.6,-22,-5-step*2,-14, 3, dark);
+  // torso
+  const g=ctx.createLinearGradient(0,-24,0,-10); g.addColorStop(0,light); g.addColorStop(1,dark);
   ctx.fillStyle=g;
   ctx.beginPath();
-  ctx.moveTo(-5,-1);
-  ctx.quadraticCurveTo(-7,-h*0.5,-4.4,-h*0.86);
-  ctx.quadraticCurveTo(-3.2,-h,0,-h);
-  ctx.quadraticCurveTo(3.2,-h,4.4,-h*0.86);
-  ctx.quadraticCurveTo(7,-h*0.5,5,-1);
-  ctx.quadraticCurveTo(0,1.8,-5,-1);
-  ctx.closePath(); ctx.fill();
+  ctx.moveTo(-4.5,-11); ctx.quadraticCurveTo(-5.6,-18,-4,-24);
+  ctx.quadraticCurveTo(0,-26.5,4,-24); ctx.quadraticCurveTo(5.6,-18,4.5,-11);
+  ctx.quadraticCurveTo(0,-9,-4.5,-11); ctx.closePath(); ctx.fill();
   // head
-  ctx.fillStyle=head; ctx.beginPath(); ctx.arc(0,-h-3.2,4.1,0,7); ctx.fill();
-  // role detail
-  if(type==='harpooner'){
-    ctx.strokeStyle='#8a6a40'; ctx.lineWidth=2.2; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(2,-h*0.58); ctx.lineTo(18,-h*0.58-2); ctx.stroke(); ctx.lineCap='butt';
-    ctx.fillStyle='#cfd6dc'; ctx.beginPath(); ctx.moveTo(18,-h*0.58-5); ctx.lineTo(23,-h*0.58-2); ctx.lineTo(18,-h*0.58+1); ctx.closePath(); ctx.fill();
-  } else if(type==='shipwright'){
-    const hb=Math.sin(bob*2)*2.5;
-    ctx.strokeStyle='#5a3c1e'; ctx.lineWidth=2.2; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(2,-h*0.55); ctx.lineTo(11,-h*0.55-9+hb); ctx.stroke(); ctx.lineCap='butt';
-    ctx.fillStyle='#9aa0a8'; ctx.fillRect(8,-h*0.55-13+hb,8,5);
-  } else if(type==='sailor'){
-    ctx.fillStyle=shade(body,-8); ctx.beginPath(); ctx.arc(0,-h-4.4,4.3,Math.PI,0); ctx.fill();   // knit cap
-  } else if(type==='castaway'){
-    ctx.strokeStyle='#9a5a3a'; ctx.lineWidth=2; ctx.lineCap='round';                              // headband rag
-    ctx.beginPath(); ctx.moveTo(-3,-h-3); ctx.quadraticCurveTo(-9,-h-1,-11,-h+3.5); ctx.stroke(); ctx.lineCap='butt';
+  ctx.fillStyle=head; ctx.beginPath(); ctx.arc(0,-28.5,4,0,7); ctx.fill();
+  // role: cap + front arm + tool
+  if(type==='sailor'){                                   // citizen — knit cap, bucket of salvage
+    ctx.fillStyle=shade(body,-6); ctx.beginPath(); ctx.arc(0,-30,4.2,Math.PI*1.04,Math.PI*1.96); ctx.fill(); ctx.fillRect(-4,-30,8,1.3);
+    limb(2.6,-22, 5,-14, 3, body);
+    ctx.fillStyle='#8a939c'; ctx.beginPath(); ctx.moveTo(2.4,-14); ctx.lineTo(7.6,-14); ctx.lineTo(6.6,-8.5); ctx.lineTo(3.4,-8.5); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#6a727a'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(5,-14,2.6,Math.PI,0,true); ctx.stroke();
+    ctx.fillStyle='#ffd24a'; ctx.beginPath(); ctx.arc(5,-12.4,1.3,0,7); ctx.fill();
+  } else if(type==='harpooner'){                         // bandana + barbed trident harpoon
+    ctx.fillStyle='#b5503a'; ctx.beginPath(); ctx.arc(0,-30,4.1,Math.PI,0); ctx.fill(); ctx.fillRect(-4.1,-30.2,8.2,1.5);
+    limb(2.6,-22, 8,-19, 3, body);
+    limb(0,-9, 18,-28, 2.6, '#7a5326');                  // shaft
+    ctx.strokeStyle='#dfe6ec'; ctx.lineWidth=2; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(18,-28); ctx.lineTo(23,-33); ctx.moveTo(18,-28); ctx.lineTo(22.5,-27.5); ctx.moveTo(18,-28); ctx.lineTo(15.5,-32.5); ctx.stroke();
+  } else if(type==='shipwright'){                        // work cap + raising/falling hammer
+    const s2=Math.sin(bob*2), rise=(s2>0?s2*5:0);
+    ctx.fillStyle='#6a4a2a'; ctx.beginPath(); ctx.ellipse(0,-31,4.6,1.6,0,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(0,-31,3.4,Math.PI,0); ctx.fill();
+    const hx=8, hy=-26-rise;
+    limb(2.6,-22, hx,hy+3, 3, body);
+    limb(hx,hy+4, hx+2.5,hy-7, 2.6, '#5a3c1e');          // handle
+    ctx.fillStyle='#9aa0a8'; ctx.save(); ctx.translate(hx+2.5,hy-7); ctx.rotate(0.35); ctx.fillRect(-2.5,-3,9,5); ctx.restore();   // hammer head
+  } else if(type==='castaway'){                          // ragged headband + idle arm
+    ctx.strokeStyle='#9a5a3a'; ctx.lineWidth=2; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(-2,-30); ctx.quadraticCurveTo(-7,-29,-9.5,-26); ctx.stroke();
+    limb(2.6,-22, 4,-13, 3, body);
+  } else {
+    limb(2.6,-22, 4+step*2,-14, 3, body);                // default swinging arm
   }
   ctx.restore();
 }
@@ -863,10 +874,14 @@ function drawBeast(e){
 }
 
 function drawSalvage(x,y){
-  // a little driftwood crate / coin of salvage
-  rect(x-4, y-3, 8, 6, '#7a5326'); rect(x-4, y-3, 8, 2, '#9a6f38');
-  rect(x-1, y-3, 2, 6, '#5a3c1c');
-  ctx.fillStyle='#ffd07a'; rect(x-1,y-1,2,2,'#ffd07a');
+  // a shiny gold coin (the salvage currency)
+  ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.beginPath(); ctx.ellipse(x,y+5,5,1.5,0,0,7); ctx.fill();
+  const g=ctx.createLinearGradient(x-5,y-5,x+4,y+5);
+  g.addColorStop(0,'#ffe79a'); g.addColorStop(0.5,'#f2c14e'); g.addColorStop(1,'#c8922e');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(x,y,4.8,5.4,0,0,7); ctx.fill();
+  ctx.lineWidth=1.3; ctx.strokeStyle='#a8761f'; ctx.beginPath(); ctx.ellipse(x,y,4.8,5.4,0,0,7); ctx.stroke();
+  ctx.fillStyle='#e6ab36'; ctx.beginPath(); ctx.ellipse(x,y,2.4,3,0,0,7); ctx.fill();           // inner ring
+  ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.ellipse(x-1.5,y-2,0.9,1.4,-0.5,0,7); ctx.fill();  // glint
 }
 function drawFish(f){
   const x=f.x, y=f.y+Math.sin(f.bob)*1.5, d=f.dir, s=f.size;
@@ -918,9 +933,11 @@ function drawKeeperSwim(k){
   ctx.beginPath(); ctx.moveTo(-10,0);
   ctx.quadraticCurveTo(-8,-6,2,-6); ctx.quadraticCurveTo(10,-5,12,0);
   ctx.quadraticCurveTo(10,5,2,6);   ctx.quadraticCurveTo(-8,6,-10,0); ctx.closePath(); ctx.fill();
-  // kicking leg
-  ctx.strokeStyle='#15233a'; ctx.lineWidth=3.4; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(-8,1); ctx.quadraticCurveTo(-13,2+kick*3,-15,4+kick*4); ctx.stroke(); ctx.lineCap='butt';
+  // kicking legs
+  ctx.strokeStyle='#15233a'; ctx.lineWidth=3.2; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-8,2); ctx.quadraticCurveTo(-13,3+kick*4,-16,4+kick*5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-8,3); ctx.quadraticCurveTo(-13,4-kick*4,-16,6-kick*5); ctx.stroke();
+  ctx.lineCap='butt';
   // head + sou'wester at the front
   ctx.fillStyle='#e6c49a'; ctx.beginPath(); ctx.arc(11,-2,4,0,7); ctx.fill();
   ctx.fillStyle='#e3b24a'; ctx.beginPath(); ctx.ellipse(12,-5,5,2,0,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(12,-5,3.4,Math.PI,0); ctx.fill();
@@ -943,42 +960,39 @@ function drawKeeper(){
   const k=G.keeper;
   if(k.swimming){ drawKeeperSwim(k); return; }
   const x=k.x, gy=landY(x), d=k.dir, t=G.time;
-  const step=Math.sin(k.bob*1.5), bb=Math.abs(Math.sin(k.bob))*0.9, h=36;
-  ctx.fillStyle='rgba(0,0,0,0.26)'; ctx.beginPath(); ctx.ellipse(x,gy,11,3,0,0,7); ctx.fill();
+  const step=Math.sin(k.bob*1.5), sw=step*3.2, bb=Math.abs(Math.sin(k.bob))*0.8;
+  const coatL='#2b4664', coatD='#15233a';
+  ctx.fillStyle='rgba(0,0,0,0.26)'; ctx.beginPath(); ctx.ellipse(x,gy,10,2.8,0,0,7); ctx.fill();
   ctx.save(); ctx.translate(x, gy-bb); ctx.scale(d,1);
-  // trailing scarf
-  drawScarf(t, -4, -h+6, 3.4);
-  // feet
-  ctx.fillStyle='#16243a';
-  ctx.beginPath(); ctx.ellipse(-2.6+step*2,-1,3,1.5,0,0,7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse( 2.6-step*2,-1,3,1.5,0,0,7); ctx.fill();
-  // long oilskin coat — smooth flared silhouette
-  const g=ctx.createLinearGradient(0,-h,0,0); g.addColorStop(0,'#2b4664'); g.addColorStop(1,'#15233a');
+  drawScarf(t, -3, -25, 3.4);
+  // legs
+  limb(-2,-13,-2.5-sw,0, 4, coatD);
+  limb( 2,-13, 2.5+sw,0, 4, coatL);
+  // back arm
+  limb(-3.4,-25,-6-step*2,-16, 3.4, coatD);
+  // oilskin coat — smooth, flared, legs visible below
+  const g=ctx.createLinearGradient(0,-30,0,-10); g.addColorStop(0,coatL); g.addColorStop(1,coatD);
   ctx.fillStyle=g;
   ctx.beginPath();
-  ctx.moveTo(-6,-1);
-  ctx.quadraticCurveTo(-8.5,-h*0.5,-5,-h*0.84);
-  ctx.quadraticCurveTo(-3.6,-h,0,-h);
-  ctx.quadraticCurveTo(3.6,-h,5,-h*0.84);
-  ctx.quadraticCurveTo(8.5,-h*0.5,6,-1);
-  ctx.quadraticCurveTo(0,2,-6,-1);
-  ctx.closePath(); ctx.fill();
+  ctx.moveTo(-5,-11); ctx.quadraticCurveTo(-7,-20,-4.6,-29);
+  ctx.quadraticCurveTo(0,-31.5,4.6,-29); ctx.quadraticCurveTo(7,-20,5,-11);
+  ctx.quadraticCurveTo(0,-9,-5,-11); ctx.closePath(); ctx.fill();
   // head + sou'wester hat
-  ctx.fillStyle='#e6c49a'; ctx.beginPath(); ctx.arc(0.5,-h-3.5,4.6,0,7); ctx.fill();
+  ctx.fillStyle='#e6c49a'; ctx.beginPath(); ctx.arc(0.5,-34,4.4,0,7); ctx.fill();
   ctx.fillStyle='#e3b24a';
-  ctx.beginPath(); ctx.ellipse(0.5,-h-5.5,7,2.4,0,0,7); ctx.fill();          // brim
-  ctx.beginPath(); ctx.arc(0.5,-h-6,4.4,Math.PI,0); ctx.fill();              // dome
-  ctx.beginPath(); ctx.moveTo(-3,-h-5); ctx.quadraticCurveTo(-7,-h-3,-6,-h+1); ctx.quadraticCurveTo(-3,-h-1,-2,-h-3); ctx.closePath(); ctx.fill(); // back flap
-  // arm raising the lantern
-  ctx.strokeStyle='#15233a'; ctx.lineWidth=3; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(3,-h*0.62); ctx.lineTo(9,-h*0.62-6); ctx.stroke(); ctx.lineCap='butt';
+  ctx.beginPath(); ctx.ellipse(0.5,-36,6.6,2.3,0,0,7); ctx.fill();           // brim
+  ctx.beginPath(); ctx.arc(0.5,-36.5,4.2,Math.PI,0); ctx.fill();             // dome
+  ctx.beginPath(); ctx.moveTo(-3,-35.5); ctx.quadraticCurveTo(-7,-33.5,-6,-30); ctx.quadraticCurveTo(-3,-32,-2,-34); ctx.closePath(); ctx.fill(); // back flap
+  // front arm raising the lantern
+  limb(3.2,-25, 9,-30, 3.4, coatD);
   ctx.restore();
   // lantern + glow (brighter at night/dusk)
-  const lx=x+d*9, ly=gy-bb-h*0.62-6, glow=0.7+0.3*Math.sin(t*5);
+  const lx=x+d*9, ly=gy-bb-30, glow=0.7+0.3*Math.sin(t*5);
   const lit = G.phase==='night' ? 1 : ((G.phaseT/DAY_LEN)<.28 ? 0.5 : 0.2);
   lanternGlow(lx,ly,52,0.55*glow*lit);
-  ctx.fillStyle='#3a4654'; ctx.beginPath(); ctx.arc(lx,ly,2.6,0,7); ctx.fill();
-  ctx.globalAlpha=glow; ctx.fillStyle='#ffe98a'; ctx.beginPath(); ctx.arc(lx,ly,3.6,0,7); ctx.fill(); ctx.globalAlpha=1;
+  ctx.fillStyle='#2a3442'; ctx.fillRect(lx-2.6, ly-3.2, 5.2, 1.4);                 // lantern top
+  ctx.fillStyle='#3a4654'; ctx.beginPath(); ctx.moveTo(lx-2.6,ly-2); ctx.lineTo(lx+2.6,ly-2); ctx.lineTo(lx+2,ly+4); ctx.lineTo(lx-2,ly+4); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha=glow; ctx.fillStyle='#ffe98a'; ctx.beginPath(); ctx.ellipse(lx,ly+1,2.3,3,0,0,7); ctx.fill(); ctx.globalAlpha=1;
 }
 
 function drawHUD(){
